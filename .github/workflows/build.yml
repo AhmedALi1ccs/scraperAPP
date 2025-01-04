@@ -1,0 +1,51 @@
+name: Build Windows Executable
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+    
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Create .env file
+      env:
+        GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+      run: |
+        echo "GOOGLE_CREDENTIALS_JSON='$env:GOOGLE_CREDENTIALS_JSON'" > .env
+        
+    - name: Build executable
+      run: |
+        pyinstaller --name=LogProcessor `
+          --onefile `
+          --windowed `
+          --add-data ".env;." `
+          --clean `
+          --noconfirm `
+          main_window.py
+        
+    - name: Create distribution ZIP
+      run: |
+        cd dist
+        Compress-Archive -Path LogProcessor.exe, ../.env -DestinationPath LogProcessor.zip
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: LogProcessor-Windows
+        path: dist/LogProcessor.zip
