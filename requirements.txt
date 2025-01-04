@@ -1,0 +1,7 @@
+pandas>=2.2.0
+PySide6>=6.6.1
+python-dotenv>=1.0.0
+google-api-python-client>=2.97.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.1.0
+pyinstaller>=6.3.0
