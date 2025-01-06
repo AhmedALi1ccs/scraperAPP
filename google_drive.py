@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 
 class GoogleDriveManager:
     SCOPES = ['https://www.googleapis.com/auth/drive']
-    REMOVED_FOLDER_ID = "1NWv0AjsOF-_5lmsEyL1q20liFWn1CtUk"
-    SCRUBBED_FOLDER_ID = "1Ink3w5hpU5sAx9EvFmPu33W7HIbE1BIz"
+    REMOVED_FOLDER_ID = "18evx04gWua9ls1mDiIr5FvAQhdFbrwfr"
+    SCRUBBED_FOLDER_ID = "1-jYrCY5ev44Hy5fXVwOZSjw7xPSTy9ML"
 
     def __init__(self):
         load_dotenv()
