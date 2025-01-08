@@ -7,6 +7,86 @@ on:
     branches: [ main ]
 
 jobs:
+  build-macos-arm64:
+    runs-on: macos-14
+    
+    steps:
+    - name: Clean up disk space
+      run: |
+        df -h
+        sudo rm -rf /Library/Developer/CommandLineTools
+        sudo rm -rf /usr/local/lib/node_modules
+        sudo rm -rf /Users/runner/.gradle
+        brew cleanup
+        df -h
+    
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Create .env file
+      env:
+        GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+      run: |
+        echo "GOOGLE_CREDENTIALS_JSON='$GOOGLE_CREDENTIALS_JSON'" > .env
+        
+    - name: Build Mac app (ARM64)
+      run: |
+        # Clean any previous builds
+        rm -rf build dist
+        
+        # Build with optimized settings
+        pyinstaller --name=LogProcessor \
+          --onefile \
+          --windowed \
+          --add-data ".env:." \
+          --clean \
+          --noconfirm \
+          --strip \
+          main_window.py
+        
+    - name: Create Mac app bundle
+      run: |
+        cd dist
+        mkdir -p LogProcessor.app/Contents/{MacOS,Resources}
+        mv LogProcessor LogProcessor.app/Contents/MacOS/
+        cp ../.env LogProcessor.app/Contents/Resources/
+        
+        # Create minimal Info.plist
+        cat > LogProcessor.app/Contents/Info.plist << EOL
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>CFBundleDisplayName</key><string>LogProcessor</string>
+          <key>CFBundleExecutable</key><string>LogProcessor</string>
+          <key>CFBundleIdentifier</key><string>com.yourdomain.logprocessor</string>
+          <key>CFBundleName</key><string>LogProcessor</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleShortVersionString</key><string>1.0.0</string>
+          <key>LSMinimumSystemVersion</key><string>11.0</string>
+          <key>LSArchitecturePriority</key><array><string>arm64</string></array>
+        </dict>
+        </plist>
+        EOL
+        
+        # Create ZIP instead of DMG to save space
+        zip -r LogProcessor-Mac-ARM64.zip LogProcessor.app
+        
+    - name: Upload Mac artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: LogProcessor-Mac-ARM64
+        path: dist/LogProcessor-Mac-ARM64.zip
+
   build-windows:
     runs-on: windows-latest
     
@@ -49,167 +129,3 @@ jobs:
       with:
         name: LogProcessor-Windows
         path: dist/LogProcessor-Windows.zip
-
-  build-macos-arm64:
-    runs-on: macos-14  # Uses macOS runner with Apple Silicon
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        
-    - name: Create .env file
-      env:
-        GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
-      run: |
-        echo "GOOGLE_CREDENTIALS_JSON='$GOOGLE_CREDENTIALS_JSON'" > .env
-        
-    - name: Build Mac app (ARM64)
-      run: |
-        pyinstaller --name=LogProcessor \
-          --onefile \
-          --windowed \
-          --add-data ".env:." \
-          --clean \
-          --noconfirm \
-          main_window.py
-        
-    - name: Create Mac app bundle
-      run: |
-        cd dist
-        mkdir -p LogProcessor.app/Contents/MacOS
-        mkdir -p LogProcessor.app/Contents/Resources
-        mv LogProcessor LogProcessor.app/Contents/MacOS/
-        cp ../.env LogProcessor.app/Contents/Resources/
-        
-        cat > LogProcessor.app/Contents/Info.plist << EOL
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-          <key>CFBundleDisplayName</key>
-          <string>LogProcessor</string>
-          <key>CFBundleExecutable</key>
-          <string>LogProcessor</string>
-          <key>CFBundleIdentifier</key>
-          <string>com.yourdomain.logprocessor</string>
-          <key>CFBundleName</key>
-          <string>LogProcessor</string>
-          <key>CFBundlePackageType</key>
-          <string>APPL</string>
-          <key>CFBundleShortVersionString</key>
-          <string>1.0.0</string>
-          <key>LSMinimumSystemVersion</key>
-          <string>11.0</string>
-          <key>NSHighResolutionCapable</key>
-          <true/>
-          <key>LSArchitecturePriority</key>
-          <array>
-            <string>arm64</string>
-          </array>
-        </dict>
-        </plist>
-        EOL
-        
-    - name: Create DMG
-      run: |
-        cd dist
-        hdiutil create -volname "LogProcessor" -srcfolder LogProcessor.app -ov -format UDZO LogProcessor-Mac-ARM64.dmg
-        
-    - name: Upload Mac artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: LogProcessor-Mac-ARM64
-        path: |
-          dist/LogProcessor-Mac-ARM64.dmg
-          dist/LogProcessor.app
-
-  build-macos-intel:
-    runs-on: macos-latest  # Uses Intel-based macOS runner
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        
-    - name: Create .env file
-      env:
-        GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
-      run: |
-        echo "GOOGLE_CREDENTIALS_JSON='$GOOGLE_CREDENTIALS_JSON'" > .env
-        
-    - name: Build Mac app (Intel)
-      run: |
-        pyinstaller --name=LogProcessor \
-          --onefile \
-          --windowed \
-          --add-data ".env:." \
-          --clean \
-          --noconfirm \
-          main_window.py
-        
-    - name: Create Mac app bundle
-      run: |
-        cd dist
-        mkdir -p LogProcessor.app/Contents/MacOS
-        mkdir -p LogProcessor.app/Contents/Resources
-        mv LogProcessor LogProcessor.app/Contents/MacOS/
-        cp ../.env LogProcessor.app/Contents/Resources/
-        
-        cat > LogProcessor.app/Contents/Info.plist << EOL
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-          <key>CFBundleDisplayName</key>
-          <string>LogProcessor</string>
-          <key>CFBundleExecutable</key>
-          <string>LogProcessor</string>
-          <key>CFBundleIdentifier</key>
-          <string>com.yourdomain.logprocessor</string>
-          <key>CFBundleName</key>
-          <string>LogProcessor</string>
-          <key>CFBundlePackageType</key>
-          <string>APPL</string>
-          <key>CFBundleShortVersionString</key>
-          <string>1.0.0</string>
-          <key>LSMinimumSystemVersion</key>
-          <string>10.15</string>
-          <key>NSHighResolutionCapable</key>
-          <true/>
-          <key>LSArchitecturePriority</key>
-          <array>
-            <string>x86_64</string>
-          </array>
-        </dict>
-        </plist>
-        EOL
-        
-    - name: Create DMG
-      run: |
-        cd dist
-        hdiutil create -volname "LogProcessor" -srcfolder LogProcessor.app -ov -format UDZO LogProcessor-Mac-Intel.dmg
-        
-    - name: Upload Mac artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: LogProcessor-Mac-Intel
-        path: |
-          dist/LogProcessor-Mac-Intel.dmg
-          dist/LogProcessor.app
