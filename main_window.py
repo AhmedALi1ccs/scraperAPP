@@ -81,34 +81,35 @@ class MainWindow(QMainWindow):
         """)
         
     def setup_file_upload_section(self):
-        upload_group = QWidget()
-        upload_layout = QVBoxLayout(upload_group)
-        
-        # Section title
-        title = QLabel("File Upload")
-        title.setStyleSheet("font-size: 14pt; font-weight: bold; color: #333333;")
-        upload_layout.addWidget(title)
-        
-        # List file upload
-        list_upload_btn = QPushButton("Upload List File (CSV)")
-        list_upload_btn.clicked.connect(self.upload_list_file)
-        upload_layout.addWidget(list_upload_btn)
-        
-        self.list_file_label = QLabel("No list file uploaded")
-        self.list_file_label.setStyleSheet("color: #666666;")
-        upload_layout.addWidget(self.list_file_label)
-        
-        # Log files upload
-        log_upload_btn = QPushButton("Upload Log Files (CSV)")
-        log_upload_btn.clicked.connect(self.upload_log_files)
-        upload_layout.addWidget(log_upload_btn)
-        
-        self.log_files_label = QLabel("No log files uploaded")
-        self.log_files_label.setStyleSheet("color: #666666;")
-        upload_layout.addWidget(self.log_files_label)
-        
-        self.content_layout.addWidget(upload_group)
-        
+      upload_group = QWidget()
+      upload_layout = QVBoxLayout(upload_group)
+      
+      # Section title
+      title = QLabel("File Upload")
+      title.setStyleSheet("font-size: 14pt; font-weight: bold; color: #333333;")
+      upload_layout.addWidget(title)
+      
+      # List file upload
+      list_upload_btn = QPushButton("Upload List File (CSV)")
+      list_upload_btn.clicked.connect(self.upload_list_file)
+      upload_layout.addWidget(list_upload_btn)
+      
+      self.list_file_label = QLabel("No list file uploaded")
+      self.list_file_label.setStyleSheet("color: #666666;")
+      upload_layout.addWidget(self.list_file_label)
+      
+      # Log files upload
+      log_upload_btn = QPushButton("Upload Log Files (CSV)")
+      log_upload_btn.clicked.connect(self.upload_log_files)
+      upload_layout.addWidget(log_upload_btn)
+      
+      # Container for log files list
+      self.log_files_container = QWidget()
+      self.log_files_layout = QVBoxLayout(self.log_files_container)
+      upload_layout.addWidget(self.log_files_container)
+      
+      self.content_layout.addWidget(upload_group)
+          
     def setup_conditions_section(self):
         conditions_group = QWidget()
         conditions_layout = QVBoxLayout(conditions_group)
@@ -140,13 +141,12 @@ class MainWindow(QMainWindow):
         
         conditions_layout.addWidget(input_widget)
         
-        # Conditions list
-        self.conditions_label = QLabel("Current Conditions: None")
-        self.conditions_label.setStyleSheet("color: #666666;")
-        conditions_layout.addWidget(self.conditions_label)
+        # Container for conditions list
+        self.conditions_container = QWidget()
+        self.conditions_layout = QVBoxLayout(self.conditions_container)
+        conditions_layout.addWidget(self.conditions_container)
         
         self.content_layout.addWidget(conditions_group)
-        
     def setup_process_section(self):
         process_group = QWidget()
         process_layout = QVBoxLayout(process_group)
@@ -168,11 +168,11 @@ class MainWindow(QMainWindow):
         
     def upload_list_file(self):
         file_name, _ = QFileDialog.getOpenFileName(
-            self, 
-            "Upload List File",
-            "",
-            "CSV Files (*.csv)"
-        )
+        self, 
+        "Upload List File",
+        "",
+        "CSV Files (*.csv)"
+    )
         if file_name:
             try:
                 self.list_file = pd.read_csv(file_name)
@@ -182,42 +182,126 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error uploading list file: {str(e)}")
                 self.list_file_label.setStyleSheet("color: #dc3545;")  # Error color
-    
+
     def upload_log_files(self):
-        file_names, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Upload Log Files",
-            "",
-            "CSV Files (*.csv)"
-        )
-        if file_names:
-            try:
-                self.log_files = [pd.read_csv(file) for file in file_names]
-                self.log_filenames = [os.path.basename(file) for file in file_names]
-                self.log_files_label.setText(f"Log files uploaded: {len(self.log_files)} files")
-                self.log_files_label.setStyleSheet("color: #28a745;")  # Success color
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Error uploading log files: {str(e)}")
-                self.log_files_label.setStyleSheet("color: #dc3545;")  # Error color
+       file_names, _ = QFileDialog.getOpenFileNames(
+        self,
+        "Upload Log Files",
+        "",
+        "CSV Files (*.csv)"
+    )
+      if file_names:
+          try:
+              for file_path in file_names:
+                  df = pd.read_csv(file_path)
+                  file_name = os.path.basename(file_path)
+                  self.log_files.append(df)
+                  self.log_filenames.append(file_name)
+                  
+                  # Create widget for this log file
+                  log_widget = QWidget()
+                  log_layout = QHBoxLayout(log_widget)
+                  
+                  # Add file name label
+                  file_label = QLabel(file_name)
+                  file_label.setStyleSheet("color: #28a745;")  # Success color
+                  log_layout.addWidget(file_label)
+                  
+                  # Add remove button
+                  remove_btn = QPushButton("Remove")
+                  remove_btn.setFixedWidth(80)
+                  remove_btn.setStyleSheet("""
+                      QPushButton {
+                          background-color: #dc3545;
+                          color: white;
+                          border: none;
+                          padding: 4px;
+                          border-radius: 4px;
+                      }
+                      QPushButton:hover {
+                          background-color: #c82333;
+                      }
+                  """)
+                  
+                  # Create closure to handle removal of this specific log file
+                  def remove_log_file(idx=len(self.log_files)-1):
+                      self.log_files.pop(idx)
+                      self.log_filenames.pop(idx)
+                      log_widget.deleteLater()
+                      # Update indexes for remaining remove buttons
+                      for i in range(idx, self.log_files_layout.count()):
+                          widget = self.log_files_layout.itemAt(i).widget()
+                          if widget:
+                              remove_button = widget.layout().itemAt(1).widget()
+                              remove_button.clicked.disconnect()
+                              remove_button.clicked.connect(lambda x, j=i: remove_log_file(j))
+                  
+                  remove_btn.clicked.connect(lambda: remove_log_file())
+                  log_layout.addWidget(remove_btn)
+                  
+                  # Add to log files list
+                  self.log_files_layout.addWidget(log_widget)
+              
+          except Exception as e:
+              QMessageBox.critical(self, "Error", f"Error uploading log files: {str(e)}")
+
     
     def add_condition(self):
         condition_type = self.condition_type_input.text().capitalize()
-        threshold = self.threshold_input.value()
-        
-        if condition_type:
-            self.conditions.append({
-                "type": condition_type,
-                "threshold": threshold
-            })
-            self.update_conditions_label()
-            
-            # Clear inputs
-            self.condition_type_input.clear()
-            self.threshold_input.setValue(1)
-            
-            # Show success message
-            QMessageBox.information(self, "Success", "Condition added successfully!")
-    
+      threshold = self.threshold_input.value()
+      
+      if condition_type:
+          condition = {
+              "type": condition_type,
+              "threshold": threshold
+          }
+          self.conditions.append(condition)
+          
+          # Create condition display widget
+          condition_widget = QWidget()
+          condition_layout = QHBoxLayout(condition_widget)
+          
+          # Add condition text
+          condition_text = QLabel(f"• {condition['type']}: min count {condition['threshold']}")
+          condition_text.setStyleSheet("color: #28a745;")
+          condition_layout.addWidget(condition_text)
+          
+          # Add remove button
+          remove_btn = QPushButton("Remove")
+          remove_btn.setFixedWidth(80)
+          remove_btn.setStyleSheet("""
+              QPushButton {
+                  background-color: #dc3545;
+                  color: white;
+                  border: none;
+                  padding: 4px;
+                  border-radius: 4px;
+              }
+              QPushButton:hover {
+                  background-color: #c82333;
+              }
+          """)
+          
+          # Create closure to handle removal of this specific condition
+          def remove_this_condition():
+              self.conditions.remove(condition)
+              condition_widget.deleteLater()
+              if not self.conditions:
+                  self.conditions_container.setVisible(False)
+          
+          remove_btn.clicked.connect(remove_this_condition)
+          condition_layout.addWidget(remove_btn)
+          
+          # Add to conditions list
+          self.conditions_layout.addWidget(condition_widget)
+          self.conditions_container.setVisible(True)
+          
+          # Clear inputs
+          self.condition_type_input.clear()
+          self.threshold_input.setValue(1)
+          
+          # Show success message
+          QMessageBox.information(self, "Success", "Condition added successfully!")
     def update_conditions_label(self):
         if self.conditions:
             conditions_text = "Current Conditions:\n"
