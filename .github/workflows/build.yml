@@ -43,42 +43,96 @@ jobs:
         # Clean any previous builds
         rm -rf build dist
         
-        # Build with optimized settings
-        pyinstaller --name=LogProcessor \
-          --onefile \
-          --windowed \
-          --add-data ".env:." \
-          --clean \
-          --noconfirm \
-          --strip \
-          main_window.py
-        
-    - name: Create Mac app bundle
-      run: |
-        cd dist
-        mkdir -p LogProcessor.app/Contents/{MacOS,Resources}
-        mv LogProcessor LogProcessor.app/Contents/MacOS/
-        cp ../.env LogProcessor.app/Contents/Resources/
-        
-        # Create minimal Info.plist
-        cat > LogProcessor.app/Contents/Info.plist << EOL
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-          <key>CFBundleDisplayName</key><string>LogProcessor</string>
-          <key>CFBundleExecutable</key><string>LogProcessor</string>
-          <key>CFBundleIdentifier</key><string>com.yourdomain.logprocessor</string>
-          <key>CFBundleName</key><string>LogProcessor</string>
-          <key>CFBundlePackageType</key><string>APPL</string>
-          <key>CFBundleShortVersionString</key><string>1.0.0</string>
-          <key>LSMinimumSystemVersion</key><string>11.0</string>
-          <key>LSArchitecturePriority</key><array><string>arm64</string></array>
-        </dict>
-        </plist>
+        # Create spec file for PyInstaller
+        cat > LogProcessor.spec << EOL
+        # -*- mode: python ; coding: utf-8 -*-
+
+        block_cipher = None
+
+        a = Analysis(
+            ['main_window.py'],
+            pathex=[],
+            binaries=[],
+            datas=[('.env', '.')],
+            hiddenimports=['PySide6.QtWidgets', 'PySide6.QtCore', 'google.oauth2.credentials'],
+            hookspath=[],
+            hooksconfig={},
+            runtime_hooks=[],
+            excludes=[],
+            win_no_prefer_redirects=False,
+            win_private_assemblies=False,
+            cipher=block_cipher,
+            noarchive=False,
+        )
+
+        pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+        exe = EXE(
+            pyz,
+            a.scripts,
+            [],
+            exclude_binaries=True,
+            name='LogProcessor',
+            debug=False,
+            bootloader_ignore_signals=False,
+            strip=False,
+            upx=True,
+            console=False,
+            disable_windowed_traceback=False,
+            argv_emulation=True,
+            target_arch='arm64',
+            codesign_identity=None,
+            entitlements_file=None,
+        )
+
+        coll = COLLECT(
+            exe,
+            a.binaries,
+            a.zipfiles,
+            a.datas,
+            strip=False,
+            upx=True,
+            upx_exclude=[],
+            name='LogProcessor',
+        )
+
+        app = BUNDLE(
+            coll,
+            name='LogProcessor.app',
+            icon=None,
+            bundle_identifier='com.yourdomain.logprocessor',
+            version='1.0.0',
+            info_plist={
+                'NSHighResolutionCapable': 'True',
+                'LSMinimumSystemVersion': '11.0',
+                'LSApplicationCategoryType': 'public.app-category.utilities',
+                'CFBundlePackageType': 'APPL',
+                'CFBundleSupportedPlatforms': ['MacOSX'],
+                'CFBundleIdentifier': 'com.yourdomain.logprocessor',
+                'CFBundleShortVersionString': '1.0.0',
+                'CFBundleVersion': '1.0.0',
+                'NSRequiresAquaSystemAppearance': 'False',
+                'LSArchitecturePriority': ['arm64'],
+            }
+        )
         EOL
         
-        # Create ZIP instead of DMG to save space
+        # Build using the spec file
+        pyinstaller LogProcessor.spec
+        
+    - name: Verify and fix app bundle
+      run: |
+        cd dist
+        
+        # Ensure all necessary files are present
+        ls -la LogProcessor.app/Contents/MacOS/
+        ls -la LogProcessor.app/Contents/Frameworks/ || mkdir -p LogProcessor.app/Contents/Frameworks/
+        ls -la LogProcessor.app/Contents/Resources/
+        
+        # Copy any missing PySide6 plugins if needed
+        cp -r /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/PySide6/plugins/* LogProcessor.app/Contents/MacOS/ || true
+        
+        # Create ZIP of the app
         zip -r LogProcessor-Mac-ARM64.zip LogProcessor.app
         
     - name: Upload Mac artifact
