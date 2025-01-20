@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QPushButton, QLabel, QFileDialog, QSpinBox, 
-                             QLineEdit, QScrollArea, QGridLayout, QMessageBox, QHBoxLayout)
+                             QLineEdit, QScrollArea, QGridLayout, QMessageBox, QHBoxLayout,QProgressBar)
 from PySide6.QtCore import Qt
 import pandas as pd
 from utils import clean_nan_values, clean_number_to_text, create_zip_file
@@ -78,7 +78,27 @@ class MainWindow(QMainWindow):
                 width: 20px;
             }
         """)
-
+    def remove_all_log_files(self):
+        """Remove all uploaded log files."""
+        # Show confirmation dialog
+        reply = QMessageBox.question(
+            self,
+            'Confirm Removal',
+            'Are you sure you want to remove all log files?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Clear the data lists
+            self.log_files.clear()
+            self.log_filenames.clear()
+            
+            # Remove all widgets except the stretch at the end
+            while self.log_files_layout.count() > 1:
+                item = self.log_files_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
     def setup_file_upload_section(self):
         upload_group = QWidget()
         upload_layout = QVBoxLayout(upload_group)
@@ -97,10 +117,30 @@ class MainWindow(QMainWindow):
         self.list_file_label.setStyleSheet("color: #666666;")
         upload_layout.addWidget(self.list_file_label)
         
-        # Log files upload
+        # Log files section
+        log_files_widget = QWidget()
+        log_files_layout = QHBoxLayout(log_files_widget)
+        
+        # Log files upload button
         log_upload_btn = QPushButton("Upload Log Files (CSV)")
         log_upload_btn.clicked.connect(self.upload_log_files)
-        upload_layout.addWidget(log_upload_btn)
+        log_files_layout.addWidget(log_upload_btn)
+        
+        # Add Remove All button
+        remove_all_btn = QPushButton("Remove All Files")
+        remove_all_btn.clicked.connect(self.remove_all_log_files)
+        remove_all_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+            }
+        """)
+        log_files_layout.addWidget(remove_all_btn)
+        
+        upload_layout.addWidget(log_files_widget)
         
         # Container for log files list with scroll area
         log_scroll = QScrollArea()
@@ -116,29 +156,29 @@ class MainWindow(QMainWindow):
         
         self.content_layout.addWidget(upload_group)
 
-    def upload_list_file(self):
-        file_name, _ = QFileDialog.getOpenFileName(
-            self, 
-            "Upload List File",
-            "",
-            "CSV Files (*.csv)"
-        )
-        if file_name:
-            try:
-                # Read CSV with optimized settings
-                self.list_file = pd.read_csv(
-                    file_name,
-                    low_memory=False,
-                    encoding='utf-8',
-                    on_bad_lines='skip'
-                )
-                self.list_file_name = os.path.splitext(os.path.basename(file_name))[0]
-                self.list_file_label.setText(f"List file uploaded: {self.list_file_name}")
-                self.list_file_label.setStyleSheet("color: #28a745;")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Error uploading list file: {str(e)}")
-                self.list_file_label.setText("No list file uploaded")
-                self.list_file_label.setStyleSheet("color: #dc3545;")
+        def upload_list_file(self):
+            file_name, _ = QFileDialog.getOpenFileName(
+                self, 
+                "Upload List File",
+                "",
+                "CSV Files (*.csv)"
+            )
+            if file_name:
+                try:
+                    # Read CSV with optimized settings
+                    self.list_file = pd.read_csv(
+                        file_name,
+                        low_memory=False,
+                        encoding='utf-8',
+                        on_bad_lines='skip'
+                    )
+                    self.list_file_name = os.path.splitext(os.path.basename(file_name))[0]
+                    self.list_file_label.setText(f"List file uploaded: {self.list_file_name}")
+                    self.list_file_label.setStyleSheet("color: #28a745;")
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Error uploading list file: {str(e)}")
+                    self.list_file_label.setText("No list file uploaded")
+                    self.list_file_label.setStyleSheet("color: #dc3545;")
     def _create_log_file_widget(self, file_name: str, index: int) -> QWidget:
         """Create a widget for displaying a log file with remove button."""
         log_widget = QWidget()
@@ -166,8 +206,12 @@ class MainWindow(QMainWindow):
             }
         """)
         
-        # Handle file removal
-        remove_btn.clicked.connect(lambda: self._remove_log_file(index, log_widget))
+        # Create a closure to capture the current index
+        def remove_handler(idx=index, widget=log_widget):
+            self._remove_log_file(idx, widget)
+        
+        # Connect the remove button
+        remove_btn.clicked.connect(remove_handler)
         log_layout.addWidget(remove_btn)
         
         return log_widget
@@ -175,21 +219,30 @@ class MainWindow(QMainWindow):
     def _remove_log_file(self, index: int, widget: QWidget):
         """Remove a log file at the specified index."""
         if 0 <= index < len(self.log_files):
+            # Remove the file from both lists
             self.log_files.pop(index)
             self.log_filenames.pop(index)
+            # Remove the widget from layout
+            widget.setParent(None)
             widget.deleteLater()
-            self._update_log_file_indices()
+            # Update remaining widgets
+            self._update_log_file_widgets()
 
-    def _update_log_file_indices(self):
-        """Update the indices of all log file widgets."""
-        for i in range(self.log_files_layout.count() - 1):
-            widget = self.log_files_layout.itemAt(i).widget()
-            if widget:
-                button = widget.layout().itemAt(1).widget()
-                if isinstance(button, QPushButton):
-                    button.clicked.disconnect()
-                    button.clicked.connect(lambda checked, idx=i: self._remove_log_file(idx, widget))
-
+    def _update_log_file_widgets(self):
+        """Recreate all log file widgets to ensure proper indexing."""
+        # Remove all existing widgets except the stretch at the end
+        while self.log_files_layout.count() > 1:
+            item = self.log_files_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        # Recreate widgets for remaining files
+        for i, filename in enumerate(self.log_filenames):
+            log_widget = self._create_log_file_widget(filename, i)
+            self.log_files_layout.insertWidget(
+                self.log_files_layout.count() - 1,
+                log_widget
+            )
     def upload_log_files(self):
         file_names, _ = QFileDialog.getOpenFileNames(
             self,
@@ -344,6 +397,13 @@ class MainWindow(QMainWindow):
         title.setStyleSheet("font-size: 14pt; font-weight: bold; color: #333333;")
         process_layout.addWidget(title)
         
+        # Add progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setAlignment(Qt.AlignCenter)
+        self.progress_bar.hide()  # Initially hidden
+        process_layout.addWidget(self.progress_bar)
+        
         process_btn = QPushButton("Process Files")
         process_btn.clicked.connect(self.process_files)
         process_layout.addWidget(process_btn)
@@ -364,39 +424,50 @@ class MainWindow(QMainWindow):
             return
         
         try:
-            # Update status
-            self.status_label.setText("Processing files... Please wait.")
-            self.status_label.setStyleSheet("color: #007bff;")
-            QApplication.processEvents()
+            # Reset and show progress bar
+            self.progress_bar.show()
+            self.progress_bar.setValue(0)
             
             current_date = datetime.now().strftime("%Y%m%d")
+            
+            # Update progress for file processing start
+            self.update_progress(10, "Starting file processing...")
             
             # Process files
             updated_list_df, updated_log_dfs, removed_log_records = process_files(
                 self.log_files, self.list_file, self.conditions, self.log_filenames
             )
             
+            # Update progress after processing
+            self.update_progress(40, "Files processed. Preparing to save removed records...")
+            
             # Save removed records
             removed_save_path = self._save_removed_records(
                 updated_list_df, removed_log_records, current_date
             )
+            
+            # Update progress after saving removed records
+            self.update_progress(60, "Saving scrubbed files...")
             
             # Save scrubbed files
             scrubbed_save_path = self._save_scrubbed_files(
                 updated_log_dfs, current_date
             )
             
+            # Update progress before Google Drive upload
+            self.update_progress(80, "Uploading to Google Drive...")
+            
             # Upload to Google Drive
             try:
-                self.status_label.setText("Uploading to Google Drive...")
-                QApplication.processEvents()
                 self.upload_to_drive(
                     updated_list_df, 
                     updated_log_dfs, 
                     removed_log_records, 
                     current_date
                 )
+                self.update_progress(100, "Files processed and uploaded successfully!")
             except Exception as e:
+                self.update_progress(90, "Files processed but failed to upload to Google Drive")
                 QMessageBox.warning(
                     self, 
                     "Warning", 
@@ -404,7 +475,6 @@ class MainWindow(QMainWindow):
                 )
             
             # Show success message
-            self.status_label.setText("Files processed and saved successfully!")
             self.status_label.setStyleSheet("color: #28a745;")
             QMessageBox.information(
                 self, 
@@ -420,7 +490,45 @@ class MainWindow(QMainWindow):
             self.status_label.setText(f"Error: {str(e)}")
             self.status_label.setStyleSheet("color: #dc3545;")
             QMessageBox.critical(self, "Error", f"Error processing files: {str(e)}")
-
+        finally:
+            # Hide progress bar after completion or error
+            self.progress_bar.hide()
+    def update_progress(self, value, message=""):
+        """Update progress bar value and message."""
+        self.progress_bar.show()
+        self.progress_bar.setValue(value)
+        if message:
+            self.status_label.setText(message)
+            self.status_label.setStyleSheet("color: #007bff;")
+    QApplication.processEvents()
+    def upload_list_file(self):
+        """Handle the upload of a list file (CSV)."""
+        file_name, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Upload List File",
+            "",
+            "CSV Files (*.csv)"
+        )
+        
+        if file_name:
+            try:
+                # Read CSV with optimized settings
+                self.list_file = pd.read_csv(
+                    file_name,
+                    low_memory=False,
+                    encoding='utf-8',
+                    on_bad_lines='skip'
+                )
+                self.list_file_name = os.path.splitext(os.path.basename(file_name))[0]
+                self.list_file_label.setText(f"List file uploaded: {self.list_file_name}")
+                self.list_file_label.setStyleSheet("color: #28a745;")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Error uploading list file: {str(e)}")
+                self.list_file_label.setText("No list file uploaded")
+                self.list_file_label.setStyleSheet("color: #dc3545;")
+                self.list_file = None
+                self.list_file_name = None
     def _save_removed_records(self, updated_list_df, removed_log_records, current_date):
         """Save removed records to a ZIP file."""
         removed_dfs = {
