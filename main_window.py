@@ -537,7 +537,8 @@ class MainWindow(QMainWindow):
         
         for i, log_file_name in enumerate(self.log_filenames):
             if not removed_log_records[i].empty:
-                removed_dfs[f'Removed_Records_{os.path.splitext(log_file_name)[0]}_{current_date}'] = removed_log_records[i]
+                base_name = os.path.splitext(log_file_name)[0]  # Keep original name with spaces/dashes
+                removed_dfs[f'Removed_Records_{base_name}_{current_date}'] = removed_log_records[i]
         
         if removed_dfs:
             save_path, _ = QFileDialog.getSaveFileName(
@@ -548,9 +549,13 @@ class MainWindow(QMainWindow):
             )
             
             if save_path:
-                with open(save_path, 'wb') as f:
-                    f.write(create_zip_file(removed_dfs))
-                return save_path
+                try:
+                    zip_data = create_zip_file(removed_dfs)
+                    with open(save_path, 'wb') as f:
+                        f.write(zip_data)
+                    return save_path
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Error saving removed records: {str(e)}")
         
         return None
 
@@ -559,7 +564,8 @@ class MainWindow(QMainWindow):
         scrubbed_dfs = {}
         
         for i, log_file_name in enumerate(self.log_filenames):
-            scrubbed_dfs[f'Scrubbed_{os.path.splitext(log_file_name)[0]}_{current_date}'] = updated_log_dfs[i]
+            base_name = os.path.splitext(log_file_name)[0]  # Keep original name with spaces/dashes
+            scrubbed_dfs[f'Scrubbed_{base_name}_{current_date}'] = updated_log_dfs[i]
         
         if scrubbed_dfs:
             save_path, _ = QFileDialog.getSaveFileName(
@@ -570,12 +576,15 @@ class MainWindow(QMainWindow):
             )
             
             if save_path:
-                with open(save_path, 'wb') as f:
-                    f.write(create_zip_file(scrubbed_dfs))
-                return save_path
+                try:
+                    zip_data = create_zip_file(scrubbed_dfs)
+                    with open(save_path, 'wb') as f:
+                        f.write(zip_data)
+                    return save_path
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Error saving scrubbed files: {str(e)}")
         
         return None
-
     def upload_to_drive(self, updated_list_df, updated_log_dfs, removed_log_records, current_date):
         """Upload files to Google Drive."""
         # Upload updated list file
