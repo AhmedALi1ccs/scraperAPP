@@ -6,15 +6,6 @@ def process_files(log_dfs, list_df, conditions, log_filenames):
     """
     Process log files by removing specific phone numbers based on conditions.
     Returns separate removed records for each log file with only the removed numbers.
-    
-    Args:
-        log_dfs (list): List of DataFrames containing log data
-        list_df (DataFrame): DataFrame containing phone numbers and log types
-        conditions (list): List of dictionaries with type and threshold conditions
-        log_filenames (list): List of log file names
-        
-    Returns:
-        tuple: (cleaned list_df, list of updated log_dfs, list of removed records)
     """
     # Step 1: Efficiently count occurrences using defaultdict
     occurrence_counter = defaultdict(int)
@@ -74,23 +65,25 @@ def process_files(log_dfs, list_df, conditions, log_filenames):
         for record in log_records:
             record_removed = False
             removed_record = record.copy()
+            triggered_column = None  # Track which column triggered the removal
             
+            # First, clear all phone columns in the removed record
+            for col_lower, original_col in phone_columns.items():
+                removed_record[original_col] = ''
+            
+            # Then check each phone column
             for col_lower, original_col in phone_columns.items():
                 phone = str(record[original_col])
                 
                 try:
-                    # Apply thorough cleaning similar to Version 2
                     if phone.replace(".", "").isdigit():
                         phone = f"{int(float(phone))}"
                     cleaned_phone = clean_number(phone)
                     
                     if cleaned_phone in phones_to_remove:
                         record_removed = True
-                        record[original_col] = ''
-                        # Clear other phone columns in removed record
-                        for other_col in phone_columns.values():
-                            if other_col != original_col:
-                                removed_record[other_col] = ''
+                        record[original_col] = ''  # Clear from scrubbed
+                        removed_record[original_col] = phone  # Keep only the triggering phone
                 except (ValueError, TypeError):
                     continue
             
