@@ -1,11 +1,13 @@
 import os
 import json
 from io import BytesIO
+import csv
 from google.oauth2.service_account import Credentials
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 from dotenv import load_dotenv
+from utils import format_dataframe_for_export
 
 class GoogleDriveManager:
     SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -31,17 +33,29 @@ class GoogleDriveManager:
             raise e
 
     def upload_dataframe(self, df, filename, folder_id):
-        """Upload a DataFrame as a CSV file to Google Drive"""
+        """Upload a DataFrame as a properly formatted CSV file to Google Drive"""
         try:
-            # Convert DataFrame to CSV in memory
+            # Format DataFrame
+            formatted_df = format_dataframe_for_export(df)
+            
+            # Create CSV in memory with proper formatting
             csv_buffer = BytesIO()
-            df.to_csv(csv_buffer, index=False)
+            formatted_df.to_csv(
+                csv_buffer,
+                index=False,
+                encoding='utf-8-sig',
+                lineterminator='\n',
+                quoting=csv.QUOTE_MINIMAL,
+                sep=',',
+                float_format='%.2f'
+            )
             csv_buffer.seek(0)
 
             # Prepare file metadata
             file_metadata = {
                 'name': filename,
-                'parents': [folder_id]
+                'parents': [folder_id],
+                'mimeType': 'text/csv'
             }
 
             # Create media upload object
