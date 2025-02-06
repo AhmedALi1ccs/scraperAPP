@@ -1,10 +1,11 @@
 import pandas as pd
 import numpy as np
-from io import BytesIO
+from io import BytesIO, StringIO
 import zipfile
 import re
 import csv
-
+import os
+import datetime
 def clean_nan_values(df):
     """Replace NaN values and its string variants with empty strings in the DataFrame"""
     # Make a copy to avoid modifying the original
@@ -86,62 +87,128 @@ def format_dataframe_for_export(df):
     
     return formatted_df
 
+
+def clean_filename(filename):
+    """Sanitize filenames to remove invalid characters."""
+    return re.sub(r'[<>:"/\\|?*]', '_', filename).strip()
+
+import csv
+from io import BytesIO
+import zipfile
+from datetime import datetime
+def format_value(val):
+    """Format value to match the exact format shown in the example."""
+    if pd.isna(val) or val == '':
+        return ''
+    
+    # Convert to string and clean
+    val_str = str(val).strip()
+    
+    # Handle date format
+    if isinstance(val, pd.Timestamp):
+        return val.strftime('%d/%m/%Y')
+    
+    # Check if it's a date string
+    if isinstance(val_str, str) and len(val_str) == 10 and val_str[4] == '-' and val_str[7] == '-':
+        try:
+            date = pd.to_datetime(val_str)
+            return date.strftime('%d/%m/%Y')
+        except:
+            pass
+    
+    # Handle numeric values
+    try:
+        if ',' in val_str:  # If value contains comma, need to quote it
+            return f'"{val_str}"'
+        if float(val_str) == int(float(val_str)):
+            return str(int(float(val_str)))
+        return str(float(val_str))
+    except ValueError:
+        # If string contains comma, quote it
+        if ',' in val_str:
+            return f'"{val_str}"'
+        return val_str
+
 def create_zip_file(dfs_dict):
-    """Create a zip file containing properly formatted CSV files"""
+    """Create a zip file containing CSV files with proper field alignment."""
     zip_buffer = BytesIO()
     
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+    with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
         for filename, df in dfs_dict.items():
-            # Create a buffer for the CSV
-            csv_buffer = BytesIO()
+            # Process DataFrame
+            processed_df = df.copy()
             
-            # Format DataFrame before saving
-            formatted_df = format_dataframe_for_export(df)
+            # Ensure all columns exist
+            for col in processed_df.columns:
+                if col not in processed_df.columns:
+                    processed_df[col] = ''
             
-            # Save with explicit formatting
-            formatted_df.to_csv(
-                csv_buffer,
-                index=False,
-                encoding='utf-8-sig',  # Adds BOM for Excel compatibility
-                lineterminator='\n',   # Unix-style line endings
-                quoting=csv.QUOTE_MINIMAL,  # Quote only necessary fields
-                sep=',',  # Explicit separator
-                float_format='%.2f'  # Format floating point numbers
-            )
+            # Get expected number of columns
+            expected_columns = len(processed_df.columns)
             
+            # Convert all columns to strings with proper formatting
+            for col in processed_df.columns:
+                processed_df[col] = processed_df[col].apply(format_value)
+            
+            # Create buffer
+            csv_buffer = StringIO()
+            
+            # Write headers
+            header_row = ','.join(str(col) for col in processed_df.columns)
+            csv_buffer.write(header_row + '\n')
+            
+            # Write data rows with alignment check
+            for idx, row in processed_df.iterrows():
+                # Format row values
+                row_values = [str(val) for val in row]
+                
+                # Ensure row has correct number of fields
+                if len(row_values) < expected_columns:
+                    row_values.extend([''] * (expected_columns - len(row_values)))
+                elif len(row_values) > expected_columns:
+                    row_values = row_values[:expected_columns]
+                
+                # Write row
+                row_str = ','.join(row_values)
+                csv_buffer.write(row_str + '\n')
+            
+            # Clean filename
+            safe_filename = filename.replace('/', '_').replace('\\', '_')
+            if not safe_filename.lower().endswith('.csv'):
+                safe_filename += '.csv'
+            
+            # Write to zip
             csv_buffer.seek(0)
+            content = csv_buffer.getvalue()
             
-            # Save to zip with proper filename
-            final_filename = f"{filename}.csv" if not filename.endswith('.csv') else filename
-            zip_file.writestr(final_filename, csv_buffer.getvalue())
+            # Double-check content before writing
+            lines = content.split('\n')
+            header_count = len(header_row.split(','))
+            
+            # Verify each line has correct number of fields
+            verified_lines = []
+            for line in lines:
+                if line:  # Skip empty lines
+                    fields = line.split(',')
+                    if len(fields) < header_count:
+                        fields.extend([''] * (header_count - len(fields)))
+                    elif len(fields) > header_count:
+                        fields = fields[:header_count]
+                    verified_lines.append(','.join(fields))
+            
+            # Write verified content
+            verified_content = '\n'.join(verified_lines)
+            zip_file.writestr(safe_filename, verified_content.encode('utf-8'))
     
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
 
 def prepare_dataframe_for_export(df):
-    """Prepare DataFrame for CSV export by cleaning and validating data"""
-    # Make a copy to avoid modifying original
+    """Prepare DataFrame ensuring exact format matching and field alignment."""
     df = df.copy()
     
-    # Clean column names
-    df.columns = df.columns.str.strip()
-    df.columns = df.columns.str.replace('\n', ' ')
-    df.columns = df.columns.str.replace('\r', ' ')
-    
-    # Handle special characters and encoding issues
-    for column in df.columns:
-        if df[column].dtype == 'object':
-            # Replace problematic characters
-            df[column] = df[column].astype(str).apply(lambda x: x.strip())
-            df[column] = df[column].replace({'\n': ' ', '\r': ' '})
-            
-        # Convert numeric columns to proper format
-        elif df[column].dtype in ['int64', 'float64']:
-            # Handle NaN values
-            df[column] = df[column].fillna('')
-            # Convert to string with proper formatting
-            df[column] = df[column].apply(
-                lambda x: f"{int(x)}" if x != '' and not pd.isna(x) else ''
-            )
+    # Process each column
+    for col in df.columns:
+        df[col] = df[col].apply(format_value)
     
     return df
